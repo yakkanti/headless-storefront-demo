@@ -1,0 +1,12 @@
+{
+  "description": "Single source of truth for the strangler-fig cutover. Routes marked 'legacy' are proxied to the existing SFCC storefront when LEGACY_ORIGIN is set. The /migration page reads this file too.",
+  "routes": [
+    { "name": "Home", "pattern": "/:brand", "phase": 1, "status": "migrated", "risk": "Low", "guardrail": "Core Web Vitals parity check before cutover" },
+    { "name": "Search", "pattern": "/:brand/search", "phase": 1, "status": "migrated", "risk": "Low", "guardrail": "Zero-result and click-through rates compared to baseline" },
+    { "name": "Category (PLP)", "pattern": "/:brand/c/:category", "phase": 2, "status": "migrated", "risk": "Medium", "guardrail": "301 map, canonical tags, sitemap diff" },
+    { "name": "Product (PDP)", "pattern": "/:brand/p/:id", "phase": 2, "status": "migrated", "risk": "Medium", "guardrail": "Product JSON-LD parity, rankings monitored weekly" },
+    { "name": "Cart", "pattern": "/cart", "phase": 3, "status": "legacy", "risk": "High", "guardrail": "Cart and checkout cut over together, behind a flag, brand by brand" },
+    { "name": "Checkout", "pattern": "/checkout", "phase": 3, "status": "legacy", "risk": "High", "guardrail": "Never changes during peak season; conversion tracked live" },
+    { "name": "Account", "pattern": "/account/:path*", "phase": 4, "status": "legacy", "risk": "Medium", "guardrail": "Session handoff verified with SLAS tokens" }
+  ]
+}

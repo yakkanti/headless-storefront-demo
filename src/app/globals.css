@@ -1,0 +1,370 @@
+:root {
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --text: #1c1f1d;
+  --muted: #5d645f;
+  --border: #e3e5e0;
+  --brand: #2f6b3f;
+  --brand-dark: #1f4a2b;
+  --radius: 10px;
+  --max: 1120px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121412;
+    --surface: #1b1e1b;
+    --text: #eef0ec;
+    --muted: #a3aaa4;
+    --border: #2d322d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  margin: 0 0 0.5rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  background: var(--surface);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+.demo-banner {
+  background: #fff4cc;
+  color: #4a3b00;
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 0.35rem 1rem;
+}
+
+.container {
+  width: min(100% - 32px, var(--max));
+  margin-inline: auto;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* Brand shell */
+.brand-shell {
+  min-height: 100vh;
+}
+.brand-header {
+  background: var(--brand);
+  color: #fff;
+}
+.brand-header .container {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding-block: 0.9rem;
+}
+.brand-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+  text-decoration: none;
+}
+.brand-nav {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.brand-nav a {
+  text-decoration: none;
+  opacity: 0.92;
+}
+.brand-nav a:hover,
+.brand-nav a:focus-visible {
+  opacity: 1;
+  text-decoration: underline;
+}
+.search-form {
+  display: flex;
+  gap: 0.4rem;
+}
+.search-form input {
+  border: 0;
+  border-radius: 6px;
+  padding: 0.45rem 0.7rem;
+  min-width: 0;
+  width: 11rem;
+}
+.search-form button,
+.button {
+  background: var(--brand-dark);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@media (max-width: 640px) {
+  .brand-header .container {
+    gap: 0.75rem;
+  }
+  .search-form {
+    flex: 1 1 100%;
+    order: 2;
+  }
+  .search-form input {
+    flex: 1;
+    width: auto;
+  }
+  .brand-nav {
+    flex-basis: 100%;
+    order: 3;
+  }
+}
+
+.brand-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 3rem;
+  padding-block: 1.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+main.container {
+  padding-block: 1.5rem;
+}
+
+.hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--brand);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+.hero h1 {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+}
+
+.breadcrumbs {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.tiles {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  margin: 0 0 2rem;
+  padding: 0;
+  list-style: none;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.tile a {
+  text-decoration: none;
+}
+
+/* Product grid */
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.card-link {
+  display: block;
+  text-decoration: none;
+  padding-bottom: 0.9rem;
+}
+.card-media {
+  position: relative;
+}
+.card-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* Remote product photos vary in shape; fit them into the same 4:3 frame as the placeholders. */
+.card-media img.product-photo,
+.pdp img.product-photo {
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #fff;
+}
+.badge {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.card-title {
+  font-size: 1rem;
+  margin: 0.7rem 0.9rem 0.2rem;
+}
+.card-price {
+  margin: 0 0.9rem;
+  font-weight: 600;
+}
+.card-stock {
+  margin: 0.2rem 0.9rem 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+.skeleton {
+  aspect-ratio: 3 / 4;
+  background: linear-gradient(90deg, var(--border), transparent, var(--border));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* PDP */
+.pdp {
+  display: grid;
+  gap: 2rem;
+}
+@media (min-width: 800px) {
+  .pdp {
+    grid-template-columns: 1.1fr 1fr;
+  }
+}
+.pdp img {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.pdp-price {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.note {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+/* Platform pages */
+.page {
+  padding-block: 2rem;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.92rem;
+}
+th,
+td {
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th {
+  font-weight: 600;
+  background: var(--bg);
+}
+.pill {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+}
+.pill.migrated {
+  background: #d7f0dd;
+  color: #135a26;
+  border-color: #a9dbb5;
+}
+.pill.legacy {
+  background: #fde7c8;
+  color: #6b4200;
+  border-color: #f1c98c;
+}
+code {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.88em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
