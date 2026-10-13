@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 import { BRAND_SLUGS, getBrand } from "@/lib/brands";
+import { cartSupported } from "@/lib/commerce";
 import { getCategories } from "@/lib/data";
 import { categoryPath } from "@/lib/seo";
 
@@ -32,6 +33,11 @@ export default async function BrandLayout({ params, children }: LayoutProps<"/[b
                 {c.name}
               </Link>
             ))}
+            {cartSupported() ? (
+              <Link href="/cart" prefetch={false}>
+                Cart
+              </Link>
+            ) : null}
           </nav>
           {/* Plain GET form: works without JavaScript and keeps search URLs shareable. */}
           <form action={`/${brand.slug}/search`} role="search" className="search-form">

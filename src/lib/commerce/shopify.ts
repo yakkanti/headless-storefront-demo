@@ -1,7 +1,7 @@
 import "server-only";
-import type { BrandSlug } from "../brands";
-import { CommerceUpstreamError, commerceFetch } from "./http";
-import type { Category, CommerceClient, Product } from "./types";
+import { type BrandSlug, isBrandSlug } from "../brands";
+import { CartRejectedError, CommerceUpstreamError, commerceFetch } from "./http";
+import type { Cart, CartContext, Category, CommerceClient, NewCartLine, Product } from "./types";
 
 /**
  * Shopify Storefront API (GraphQL) client. Collections map to categories and
@@ -48,8 +48,33 @@ type StorefrontProduct = {
   priceRange?: { minVariantPrice?: Money; maxVariantPrice?: Money };
   compareAtPriceRange?: { minVariantPrice?: Money };
   collections?: { nodes?: { handle: string }[] };
-  featuredImage?: { url: string; altText?: string | null } | null;
+  featuredImage?: StorefrontImage | null;
+  variants?: { nodes?: { id: string; title?: string; availableForSale?: boolean; price?: Money }[] };
 };
+
+type StorefrontImage = { url: string; altText?: string | null };
+
+type StorefrontCart = {
+  id: string;
+  checkoutUrl: string;
+  totalQuantity: number;
+  cost: { subtotalAmount: Money };
+  lines: {
+    nodes: {
+      id: string;
+      quantity: number;
+      attribute?: { value?: string | null } | null;
+      cost: { totalAmount: Money; amountPerQuantity: Money };
+      merchandise: {
+        title?: string;
+        image?: StorefrontImage | null;
+        product: { handle: string; title?: string; featuredImage?: StorefrontImage | null };
+      };
+    }[];
+  };
+};
+
+type CartPayload = { cart: StorefrontCart | null; userErrors: { code?: string | null; message: string }[] };
 
 type StorefrontCollection = { handle: string; title?: string; description?: string };
 
@@ -66,6 +91,78 @@ const PRODUCT_FIELDS = `
     featuredImage { url altText }
   }
 `;
+
+/** Variants are only fetched for a single product: on a listing they would multiply the query cost. */
+const PRODUCT_DETAIL_FIELDS = `
+  ${PRODUCT_FIELDS}
+  fragment ProductDetailFields on Product {
+    ...ProductFields
+    variants(first: 100) { nodes { id title availableForSale price { amount } } }
+  }
+`;
+
+/** Hidden from the buyer at checkout because of the leading underscore. */
+const BRAND_ATTRIBUTE = "_brand";
+
+/** Shopify's name for the only variant of a product that has no options. */
+const DEFAULT_VARIANT_TITLE = "Default Title";
+
+const CART_FIELDS = `
+  fragment CartFields on Cart {
+    id
+    checkoutUrl
+    totalQuantity
+    cost { subtotalAmount { amount currencyCode } }
+    lines(first: 100) {
+      nodes {
+        id
+        quantity
+        attribute(key: "${BRAND_ATTRIBUTE}") { value }
+        cost { totalAmount { amount currencyCode } amountPerQuantity { amount currencyCode } }
+        merchandise {
+          ... on ProductVariant {
+            title
+            image { url altText }
+            product { handle title featuredImage { url altText } }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const cleanAlt = (image: StorefrontImage, fallback: string) => image.altText?.replace(/\s+/g, " ").trim() || fallback;
+
+export function mapCart(c: StorefrontCart): Cart {
+  return {
+    id: c.id,
+    checkoutUrl: c.checkoutUrl,
+    totalQuantity: c.totalQuantity,
+    subtotal: Number(c.cost.subtotalAmount.amount),
+    currency: c.cost.subtotalAmount.currencyCode,
+    lines: c.lines.nodes.map((line) => {
+      const { merchandise } = line;
+      const name = merchandise.product.title ?? merchandise.product.handle;
+      const image = merchandise.image ?? merchandise.product.featuredImage;
+      const brand = line.attribute?.value;
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        brand: brand && isBrandSlug(brand) ? brand : null,
+        productId: merchandise.product.handle,
+        name,
+        // A single-variant product repeats its own name, or Shopify's placeholder, as the variant title.
+        variantTitle:
+          merchandise.title && merchandise.title !== DEFAULT_VARIANT_TITLE && merchandise.title !== name
+            ? merchandise.title
+            : "",
+        unitPrice: Number(line.cost.amountPerQuantity.amount),
+        lineTotal: Number(line.cost.totalAmount.amount),
+        image: image ? { url: image.url, alt: cleanAlt(image, name) } : undefined,
+      };
+    }),
+  };
+}
 
 /** Catch-all category, so products that are in no collection still have a listing page. */
 export const ALL_CATEGORY: Category = { slug: "all", name: "All products", description: "Everything in the store." };
@@ -86,9 +183,13 @@ export function mapProduct(brand: BrandSlug, p: StorefrontProduct, category?: st
     description: p.description ?? "",
     badge: compareAt > price ? "Sale" : undefined,
     inStock: p.availableForSale ?? true,
-    image: p.featuredImage?.url
-      ? { url: p.featuredImage.url, alt: p.featuredImage.altText?.replace(/\s+/g, " ").trim() || name }
-      : undefined,
+    image: p.featuredImage?.url ? { url: p.featuredImage.url, alt: cleanAlt(p.featuredImage, name) } : undefined,
+    variants: p.variants?.nodes?.map((v) => ({
+      id: v.id,
+      title: v.title && v.title !== DEFAULT_VARIANT_TITLE ? v.title : name,
+      price: Number(v.price?.amount ?? price),
+      available: v.availableForSale ?? true,
+    })),
   };
 }
 
@@ -99,13 +200,28 @@ export function mapCollection(c: StorefrontCollection): Category {
 export function createShopifyClient(cfg: ShopifyConfig): CommerceClient {
   const endpoint = `https://${cfg.storeDomain}/api/${cfg.apiVersion}/graphql.json`;
 
-  async function query<T>(document: string, variables: Record<string, unknown> = {}): Promise<T> {
-    // Every operation here is a read, so retrying is safe.
-    const res = await commerceFetch("Shopify Storefront API", endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(cfg.token) },
-      body: JSON.stringify({ query: document, variables }),
-    });
+  /** Reads use the default policy and may be retried. Cart writes pass `retries: 0`. */
+  async function query<T>(
+    document: string,
+    variables: Record<string, unknown> = {},
+    { retries, buyerIp }: { retries?: number; buyerIp?: string } = {},
+  ): Promise<T> {
+    const res = await commerceFetch(
+      "Shopify Storefront API",
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeader(cfg.token),
+          // Server-side requests all come from one IP; Shopify asks for the buyer's so its
+          // bot protection and rate limits apply per shopper, not to the whole storefront.
+          ...(buyerIp ? { "Shopify-Storefront-Buyer-IP": buyerIp } : {}),
+        },
+        body: JSON.stringify({ query: document, variables }),
+      },
+      retries === undefined ? {} : { retries },
+    );
     if (!res.ok) throw new CommerceUpstreamError(`Shopify Storefront API request failed (${res.status})`, res.status);
     const json = (await res.json()) as { data?: T; errors?: { message: string }[] };
     if (json.errors?.length) {
@@ -115,7 +231,65 @@ export function createShopifyClient(cfg: ShopifyConfig): CommerceClient {
     return json.data;
   }
 
+  const toLineInput = (line: NewCartLine) => ({
+    merchandiseId: line.variantId,
+    quantity: line.quantity,
+    attributes: [{ key: BRAND_ATTRIBUTE, value: line.brand }],
+  });
+
+  /** Runs one cart mutation, never retried, and turns Shopify's userErrors into a typed rejection. */
+  async function mutateCart(field: string, args: string, call: string, variables: Record<string, unknown>, ctx?: CartContext) {
+    const data = await query<Record<string, CartPayload>>(
+      `${CART_FIELDS} mutation ${field}(${args}) {
+        ${field}(${call}) { cart { ...CartFields } userErrors { code message } }
+      }`,
+      variables,
+      { retries: 0, buyerIp: ctx?.buyerIp },
+    );
+    const { cart, userErrors } = data[field];
+    if (userErrors.length > 0 || !cart) {
+      throw new CartRejectedError(userErrors.map((e) => e.message).join("; ") || "Cart not found");
+    }
+    return mapCart(cart);
+  }
+
   return {
+    cart: {
+      async getCart(id, ctx) {
+        const data = await query<{ cart: StorefrontCart | null }>(
+          `${CART_FIELDS} query Cart($id: ID!) { cart(id: $id) { ...CartFields } }`,
+          { id },
+          { buyerIp: ctx?.buyerIp },
+        );
+        return data.cart ? mapCart(data.cart) : null;
+      },
+      createCart: (lines, ctx) =>
+        mutateCart("cartCreate", "$input: CartInput!", "input: $input", { input: { lines: lines.map(toLineInput) } }, ctx),
+      addLines: (id, lines, ctx) =>
+        mutateCart(
+          "cartLinesAdd",
+          "$cartId: ID!, $lines: [CartLineInput!]!",
+          "cartId: $cartId, lines: $lines",
+          { cartId: id, lines: lines.map(toLineInput) },
+          ctx,
+        ),
+      updateLine: (id, lineId, quantity, ctx) =>
+        quantity > 0
+          ? mutateCart(
+              "cartLinesUpdate",
+              "$cartId: ID!, $lines: [CartLineUpdateInput!]!",
+              "cartId: $cartId, lines: $lines",
+              { cartId: id, lines: [{ id: lineId, quantity }] },
+              ctx,
+            )
+          : mutateCart(
+              "cartLinesRemove",
+              "$cartId: ID!, $lineIds: [ID!]!",
+              "cartId: $cartId, lineIds: $lineIds",
+              { cartId: id, lineIds: [lineId] },
+              ctx,
+            ),
+    },
     async getCategories() {
       const data = await query<{ collections: { nodes: StorefrontCollection[] } }>(
         `query Collections { collections(first: 250) { nodes { handle title description } } }`,
@@ -160,7 +334,9 @@ export function createShopifyClient(cfg: ShopifyConfig): CommerceClient {
     },
     async getProduct(brand, id) {
       const data = await query<{ product: StorefrontProduct | null }>(
-        `${PRODUCT_FIELDS} query ProductByHandle($handle: String!) { product(handle: $handle) { ...ProductFields } }`,
+        `${PRODUCT_DETAIL_FIELDS} query ProductByHandle($handle: String!) {
+          product(handle: $handle) { ...ProductDetailFields }
+        }`,
         { handle: id },
       );
       return data.product ? mapProduct(brand, data.product) : null;

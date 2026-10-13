@@ -17,6 +17,11 @@ export class CommerceUpstreamError extends Error {
   }
 }
 
+/** The provider understood a cart request and refused it (item unavailable, cart gone, bad quantity). */
+export class CartRejectedError extends Error {
+  readonly name = "CartRejectedError";
+}
+
 export type TransportPolicy = {
   timeoutMs?: number;
   /** Extra attempts after the first. Only safe for idempotent requests. */

@@ -56,7 +56,13 @@ brand-specific components behind the same props.
   higher compare-at price shows a "Sale" badge.
 - One store backs all brands. Brand scoping (a store per brand, or a brand tag filter) is not implemented.
 - Each product's featured image is served from `cdn.shopify.com` through `next/image` (allowed in `next.config.ts`).
-- Not covered: pagination past 24 products, variants, image galleries, cart and checkout.
+- Cart: `CommerceClient.cart` is optional and only Shopify implements it, through the Storefront API cart
+  mutations. The cart ID is a bearer secret kept in an httpOnly cookie; cart reads are never cached; writes go
+  through Server Functions with `retries: 0` and pass the buyer's IP, as Shopify asks of server-side callers.
+  Each line carries a hidden `_brand` attribute so one cart can hold items from several storefronts.
+- Checkout: `/checkout` redirects to the cart's `checkoutUrl` on Shopify's hosted checkout. Nothing about payment
+  is handled in this app.
+- Not covered: pagination past 24 products, image galleries, selling plans, discount codes, customer accounts.
 
 ## Failure modes to design for
 

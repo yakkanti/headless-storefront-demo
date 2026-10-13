@@ -22,5 +22,9 @@ export function getCommerceClient(): CommerceClient {
   return scapi ? createScapiClient(scapi) : mockClient;
 }
 
-export { CommerceUpstreamError } from "./http";
-export type { CommerceClient, Product, Category } from "./types";
+export function cartSupported(): boolean {
+  return Boolean(getCommerceClient().cart);
+}
+
+export { CartRejectedError, CommerceUpstreamError } from "./http";
+export type { Cart, CartClient, CartLine, CommerceClient, Product, Category, Variant } from "./types";

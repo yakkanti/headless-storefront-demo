@@ -22,8 +22,10 @@ It is built around a Salesforce Commerce Cloud (SFCC) migration, but runs standa
 | Quality | Lint, typecheck, unit tests, production-build smoke tests in CI | Built |
 | AI in the SDLC | Workflow and guardrails in [docs/AI_SDLC.md](docs/AI_SDLC.md) | Documented |
 
-Not built, on purpose: cart, checkout, accounts and payments. In the migration plan these move last, behind a flag,
-and never during peak season. See [docs/MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md).
+Cart and checkout hand-off work when Shopify is the catalog: add to cart from a product page, change quantities,
+and continue to Shopify's hosted checkout. On the mock and SFCC sources they are not built, on purpose: in the
+migration plan they move last, behind a flag, and never during peak season. Accounts and payments are not built on
+any source. See [docs/MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md).
 
 ## Run it
 
@@ -81,6 +83,10 @@ Or with the CLI: `npx vercel` (preview) then `npx vercel --prod`.
 - **Invalidation fans out.** Purging any brand-scoped tag also purges that brand's catalog, and every brand when
   one catalog backs them all, so a listing never keeps a price its product page has dropped.
 
+- **The cart lives in Shopify, not here.** The browser holds only the cart ID in an httpOnly cookie, cart writes
+  are plain form posts to Server Functions (they work without JavaScript), and payment happens on Shopify's hosted
+  checkout, so no card data touches this app. Cart writes are never retried, because a retried add could add twice.
+
 ## Honest limitations
 
 - The SCAPI adapter needs validation against a real realm (auth flow, response shapes, site IDs).
@@ -91,5 +97,8 @@ Or with the CLI: `npx vercel` (preview) then `npx vercel --prod`.
   it automatically yet; a Shopify `products/update` webhook would.
 - Sitemap and static params are built from the active catalog at build time. A large catalog needs sitemap
   splitting and a cap on prerendered products.
+- Checkout on a Shopify development store sits behind the store password, so a visitor is asked for it at
+  hand-off. A live store has no such step.
+- The cart has no item count in the header, no discount codes and no subscription (selling plan) options.
 - No end-to-end browser tests yet (Playwright would be next), and no load or performance budget enforcement in CI.
 - Images are SVG placeholders for the mock and SFCC sources. The Shopify source shows each product's featured image.

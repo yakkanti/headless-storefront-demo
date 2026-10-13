@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AddToCart } from "@/components/AddToCart";
 import { priceLabel } from "@/components/ProductCard";
 import { BRAND_SLUGS, getBrand } from "@/lib/brands";
+import { cartSupported } from "@/lib/commerce";
 import { getProduct, listProducts } from "@/lib/data";
 import { categoryPath, productJsonLd, productPath } from "@/lib/seo";
 
@@ -62,13 +64,20 @@ export default async function ProductPage({ params }: PageProps<"/[brand]/p/[id]
           <p className="pdp-price">{priceLabel(product)}</p>
           <p>{product.description}</p>
           <p className="muted">SKU {product.id}</p>
-          <span className="button" aria-disabled="true" role="button">
-            {product.inStock ? "Add to cart (demo)" : "Out of stock"}
-          </span>
-          <p className="note">
-            Cart and checkout are still served by the legacy platform in this plan, so the riskiest, revenue-critical
-            flow does not change until the end. See the <Link href="/migration">migration plan</Link>.
-          </p>
+          {cartSupported() ? (
+            <AddToCart brand={brand.slug} product={product} />
+          ) : (
+            <>
+              <span className="button" aria-disabled="true" role="button">
+                {product.inStock ? "Add to cart (demo)" : "Out of stock"}
+              </span>
+              <p className="note">
+                Cart and checkout are still served by the legacy platform in this plan, so the riskiest,
+                revenue-critical flow does not change until the end. See the{" "}
+                <Link href="/migration">migration plan</Link>.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </>

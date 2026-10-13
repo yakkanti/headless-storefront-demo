@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockClient } from "@/lib/commerce/mock";
 import { commerceSource } from "@/lib/commerce";
-import { CommerceUpstreamError, commerceFetch } from "@/lib/commerce/http";
+import { CartRejectedError, CommerceUpstreamError, commerceFetch } from "@/lib/commerce/http";
 import { mapHit, mapProduct, scapiConfigFromEnv } from "@/lib/commerce/scapi";
 import {
   authHeader,
@@ -219,5 +219,96 @@ describe("Shopify adapter over HTTP", () => {
       },
     });
     expect(flat.priceMax).toBeUndefined();
+  });
+});
+
+describe("Shopify cart over HTTP", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const cart = createShopifyClient({ storeDomain: "x.myshopify.com", token: "shpat_t", apiVersion: "2026-07" }).cart!;
+
+  const money = (amount: string) => ({ amount, currencyCode: "USD" });
+  const storefrontCart = {
+    id: "gid://shopify/Cart/abc?key=secret",
+    checkoutUrl: "https://x.myshopify.com/cart/c/abc?key=secret",
+    totalQuantity: 3,
+    cost: { subtotalAmount: money("1469.91") },
+    lines: {
+      nodes: [
+        {
+          id: "line-1",
+          quantity: 3,
+          attribute: { value: "ridgeline" },
+          cost: { totalAmount: money("1469.91"), amountPerQuantity: money("699.95") },
+          merchandise: {
+            title: "Ice",
+            image: null,
+            product: { handle: "board", title: "Board", featuredImage: { url: "https://cdn.shopify.com/b.jpg" } },
+          },
+        },
+      ],
+    },
+  };
+
+  it("creates a cart, tagging the line with its brand and sending the buyer IP", async () => {
+    const calls = stubFetch(json({ data: { cartCreate: { cart: storefrontCart, userErrors: [] } } }));
+    const created = await cart.createCart([{ variantId: "v1", quantity: 3, brand: "ridgeline" }], { buyerIp: "203.0.113.9" });
+    expect(created).toMatchObject({
+      id: "gid://shopify/Cart/abc?key=secret",
+      checkoutUrl: "https://x.myshopify.com/cart/c/abc?key=secret",
+      totalQuantity: 3,
+      subtotal: 1469.91,
+      currency: "USD",
+    });
+    expect(created.lines[0]).toMatchObject({
+      brand: "ridgeline",
+      productId: "board",
+      variantTitle: "Ice",
+      unitPrice: 699.95,
+      lineTotal: 1469.91,
+      image: { url: "https://cdn.shopify.com/b.jpg", alt: "Board" },
+    });
+    expect(calls[0].init.headers).toMatchObject({ "Shopify-Storefront-Buyer-IP": "203.0.113.9" });
+    expect(JSON.parse(String(calls[0].init.body)).variables.input.lines).toEqual([
+      { merchandiseId: "v1", quantity: 3, attributes: [{ key: "_brand", value: "ridgeline" }] },
+    ]);
+  });
+
+  it("never retries a cart write, so a failed add cannot go in twice", async () => {
+    const calls = stubFetch(new Response("", { status: 503 }), json({ data: {} }));
+    await expect(cart.addLines("c1", [{ variantId: "v1", quantity: 1, brand: "ridgeline" }])).rejects.toBeInstanceOf(
+      CommerceUpstreamError,
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it("turns Shopify userErrors into a typed rejection", async () => {
+    stubFetch(json({ data: { cartLinesAdd: { cart: null, userErrors: [{ code: "INVALID", message: "Variant is unavailable" }] } } }));
+    await expect(cart.addLines("c1", [{ variantId: "v1", quantity: 1, brand: "ridgeline" }])).rejects.toBeInstanceOf(
+      CartRejectedError,
+    );
+  });
+
+  it("removes a line when the quantity is zero, and updates it otherwise", async () => {
+    const calls = stubFetch(
+      json({ data: { cartLinesRemove: { cart: storefrontCart, userErrors: [] } } }),
+      json({ data: { cartLinesUpdate: { cart: storefrontCart, userErrors: [] } } }),
+    );
+    await cart.updateLine("c1", "line-1", 0);
+    await cart.updateLine("c1", "line-1", 2);
+    expect(JSON.parse(String(calls[0].init.body)).variables).toEqual({ cartId: "c1", lineIds: ["line-1"] });
+    expect(JSON.parse(String(calls[1].init.body)).variables).toEqual({ cartId: "c1", lines: [{ id: "line-1", quantity: 2 }] });
+  });
+
+  it("returns null for an expired cart, and hides a variant title that repeats the product name", async () => {
+    stubFetch(json({ data: { cart: null } }));
+    expect(await cart.getCart("gone")).toBeNull();
+    const single = structuredClone(storefrontCart);
+    single.lines.nodes[0].merchandise.title = "Board";
+    stubFetch(json({ data: { cart: single } }));
+    expect((await cart.getCart("c1"))!.lines[0].variantTitle).toBe("");
+  });
+
+  it("is absent on sources without a cart", () => {
+    expect(mockClient.cart).toBeUndefined();
   });
 });
